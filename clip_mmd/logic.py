@@ -1,4 +1,4 @@
-from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+from transformers import CLIPImageProcessor, AutoModel
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
@@ -18,8 +18,9 @@ class extractor():
                  device_ids=[0]):
         self.device = device
         self.data_parallel = data_parallel
-        self.model = CLIPVisionModelWithProjection.from_pretrained(model_name).to(device)
+        self.model = AutoModel.from_pretrained(model_name).to(device)
         if data_parallel:
+            
             self.model = torch.nn.DataParallel(self.model.to(torch.device('cuda', device_ids[0])), device_ids=device_ids)
         self.processor = CLIPImageProcessor.from_pretrained(model_name)
         self.processor.do_rescale=False
@@ -27,7 +28,7 @@ class extractor():
         self.processor.do_normalize=True
         self.processor.do_resize=False
         self.processor.do_convert_rgb=False
-        self.holder = torch.device('cuda', device_ids[0]) if data_parallel else device
+        self.holder = torch.device('cuda', device_ids[0]) if data_parallel else torch.device('cuda')
         self.model.eval()
         
 
@@ -35,7 +36,10 @@ class extractor():
     def __call__(self, img:torch.Tensor):
         inputs = self.processor(images=img, return_tensors="pt")
         inputs = {k: v.to(self.holder) for k, v in inputs.items()}
-        features = self.model(**inputs).image_embeds.cpu()
+        if self.model_name.startswith("openai/clip-vit"):
+            features = self.model(**inputs).image_embeds.cpu()
+        else: #sushant
+            features = self.model(**inputs).pooler_output.cpu()
         features /= torch.linalg.norm(features, axis=-1, keepdims=True)
         return features
 
